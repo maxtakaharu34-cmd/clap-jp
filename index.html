@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+<meta name="theme-color" content="#fbbf24" />
+<title>拍手100連</title>
+<link href="https://fonts.googleapis.com/css2?family=Mochiy+Pop+P+One&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box}html,body{margin:0;padding:0;height:100%;overflow:hidden}
+body{font-family:system-ui,sans-serif;color:#3a2a1c;background:linear-gradient(180deg,#fef3c7,#fbbf24);touch-action:manipulation;user-select:none;-webkit-tap-highlight-color:transparent}
+#app{display:flex;flex-direction:column;height:100dvh;padding:14px;gap:10px;max-width:480px;margin:0 auto;align-items:center}
+.title{font-family:"Mochiy Pop P One",sans-serif;font-size:24px;color:#fff;-webkit-text-stroke:2.5px #3a2a1c;paint-order:stroke fill;text-shadow:3px 3px 0 #d97706;margin:6px 0}
+.count-card{flex:1;width:100%;background:#fff;border:4px solid #3a2a1c;border-radius:18px;box-shadow:4px 4px 0 #3a2a1c;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;position:relative}
+.count{font-family:"Mochiy Pop P One",sans-serif;font-size:120px;color:#d97706;-webkit-text-stroke:3px #3a2a1c;paint-order:stroke fill;line-height:1;transition:transform .15s}
+.count.pop{transform:scale(1.2)}
+.count small{font-size:24px}
+.lvl{font-family:"Mochiy Pop P One",sans-serif;font-size:16px;background:#fef3c7;border:2px solid #3a2a1c;border-radius:999px;padding:5px 16px}
+.bar{width:80%;height:14px;background:#fef3c7;border:2px solid #3a2a1c;border-radius:999px;overflow:hidden}
+.bar-fill{height:100%;background:linear-gradient(90deg,#10b981,#fbbf24,#ef4444);transition:width .1s;width:0}
+.hands{position:absolute;font-size:24px;animation:rise 1.2s linear forwards;pointer-events:none}
+@keyframes rise{from{transform:translateY(0);opacity:1}to{transform:translateY(-150px);opacity:0}}
+.hud{display:flex;gap:10px;font-size:13px;font-weight:bold}
+.hud .box{background:#fff;border:2px solid #3a2a1c;border-radius:10px;padding:5px 12px}
+.actions{display:flex;gap:8px;justify-content:center}
+.actions button{background:#d97706;color:#fff;border:3px solid #3a2a1c;padding:12px 22px;font-family:"Mochiy Pop P One",sans-serif;font-size:14px;border-radius:999px;cursor:pointer;box-shadow:3px 3px 0 #3a2a1c}
+.actions .reset{background:#fff;color:#3a2a1c}
+.actions .share{background:#1da1f2;color:#fff}
+.actions button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #3a2a1c}
+.actions button:disabled{opacity:.4}
+.note{font-size:9px;text-align:center;opacity:.7;line-height:1.5}
+.err{padding:10px;background:rgba(255,0,0,.2);border:2px solid #f55;border-radius:10px;font-size:12px;display:none}
+.err.show{display:block}
+</style>
+</head>
+<body>
+<div id="app">
+<h1 class="title">拍手100連 👏</h1>
+<div class="hud">
+  <div class="box">最高: <span id="best">0</span></div>
+  <div class="box">時間: <span id="tm">10</span>s</div>
+</div>
+<div class="count-card" id="card">
+  <div class="lvl" id="lvl">▶ スタート</div>
+  <div class="count"><span id="c">0</span><small>回</small></div>
+  <div class="bar"><div class="bar-fill" id="mf"></div></div>
+</div>
+<div class="actions">
+  <button id="btn-go">▶ 開始</button>
+  <button id="btn-share" class="share" disabled>🔗 シェア</button>
+</div>
+<div class="note">10秒で何回拍手できる？マイクで音検出（音声送信なし）</div>
+<div class="err" id="err"></div>
+</div>
+<script>
+(()=>{
+'use strict';
+const SHARE_URL='https://maxtakaharu34-cmd.github.io/clap-jp/';
+const KEY='clap_best';
+const $=(id)=>document.getElementById(id);
+let best=parseInt(localStorage.getItem(KEY)||'0',10);$('best').textContent=best;
+let stream=null,ac=null,analyser=null,running=false,count=0,lastClap=0,timer=null,timeLeft=10;
+async function start(){
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    ac=new(window.AudioContext||window.webkitAudioContext)();
+    const src=ac.createMediaStreamSource(stream);
+    analyser=ac.createAnalyser();analyser.fftSize=512;
+    src.connect(analyser);return true;
+  }catch(e){$('err').textContent='マイク起動失敗: '+e.message;$('err').classList.add('show');return false}
+}
+function loop(){
+  if(!running)return;
+  const buf=new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteTimeDomainData(buf);
+  let peak=0;for(const v of buf){const n=Math.abs(v-128);if(n>peak)peak=n}
+  const vol=peak/128;
+  $('mf').style.width=Math.min(100,vol*200)+'%';
+  // detect sharp peak (clap)
+  const now=Date.now();
+  if(vol>.55 && now-lastClap>180){
+    lastClap=now;count++;
+    $('c').textContent=count;
+    const cn=document.querySelector('.count');cn.classList.add('pop');setTimeout(()=>cn.classList.remove('pop'),120);
+    spawnHand();
+    if(count>0&&count%10===0)tone(880,.06);else tone(660,.04);
+  }
+  requestAnimationFrame(loop);
+}
+function spawnHand(){
+  const h=document.createElement('div');h.className='hands';h.textContent='👏';
+  h.style.left=(20+Math.random()*60)+'%';h.style.top='60%';
+  $('card').appendChild(h);setTimeout(()=>h.remove(),1200);
+}
+async function go(){
+  if(running)return;
+  if(!stream){const ok=await start();if(!ok)return}
+  running=true;count=0;timeLeft=10;
+  $('c').textContent=0;$('lvl').textContent='👏👏👏 ガッツリ拍手！';
+  loop();
+  if(timer)clearInterval(timer);
+  timer=setInterval(()=>{timeLeft--;$('tm').textContent=timeLeft;if(timeLeft<=0)end()},1000);
+  $('btn-go').disabled=true;
+}
+function end(){
+  running=false;clearInterval(timer);
+  if(count>best){best=count;localStorage.setItem(KEY,String(best));$('best').textContent=best;$('lvl').textContent='🏆 自己ベスト更新！'}
+  else $('lvl').textContent='👏 結果: '+count+'回';
+  $('btn-go').textContent='▶ もう一度';$('btn-go').disabled=false;$('btn-share').disabled=false;
+  fanfare();
+}
+const tone=(f,d)=>{const a=ac;if(!a)return;const o=a.createOscillator();const g=a.createGain();o.type='triangle';o.frequency.value=f;g.gain.value=.1;g.gain.exponentialRampToValueAtTime(.0001,a.currentTime+d);o.connect(g).connect(a.destination);o.start();o.stop(a.currentTime+d)};
+const fanfare=()=>{[523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,.18),i*100))};
+$('btn-go').addEventListener('click',go);
+$('btn-share').addEventListener('click',()=>{
+  const txt=`拍手100連で ${count}回 / 10秒！ベスト${best}回 #拍手100連`;
+  window.open(`https://x.com/intent/post?text=${encodeURIComponent(txt)}&url=${encodeURIComponent(SHARE_URL)}`,'_blank','noopener,noreferrer');
+});
+})();
+</script>
+</body>
+</html>
